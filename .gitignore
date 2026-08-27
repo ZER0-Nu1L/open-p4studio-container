@@ -1,0 +1,7 @@
+.idea/
+.vscode/
+artifacts/
+build/
+*.log
+__pycache__/
+*.pyc

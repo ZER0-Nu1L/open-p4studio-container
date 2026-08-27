@@ -1,0 +1,3 @@
+[submodule "third_party/open-p4studio"]
+	path = third_party/open-p4studio
+	url = https://github.com/p4lang/open-p4studio.git

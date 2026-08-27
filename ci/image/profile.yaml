@@ -1,0 +1,16 @@
+global-options:
+  asic: false
+  build_model: true
+features:
+  bf-diags: false
+  drivers:
+    bfrt: true
+    bfrt-generic-flags: true
+    grpc: true
+    kernel-modules: false
+    p4rt: false
+    pi: false
+    tdi: false
+    thrift-driver: false
+architectures:
+  - tofino

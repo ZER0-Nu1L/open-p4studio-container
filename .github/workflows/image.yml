@@ -1,0 +1,338 @@
+name: image
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+    tags:
+      - sde-9.13.4-tofino1-r*
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  IMAGE_NAME: ghcr.io/zer0-nu1l/open-p4studio-container
+  LOCAL_IMAGE: open-p4studio-container:selftest-${{ github.run_id }}
+
+jobs:
+  validate:
+    name: validate
+    if: ${{ github.ref_type != 'tag' }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 180
+    concurrency:
+      group: open-p4studio-container-${{ github.workflow }}-${{ github.ref }}
+      cancel-in-progress: true
+    permissions:
+      contents: read
+    steps:
+      - name: Check out container repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          submodules: false
+
+      - name: Load pinned versions
+        run: grep -Ev '^(#|$)' ci/image/versions.env >> "$GITHUB_ENV"
+
+      - name: Prepare ephemeral runner
+        run: ci/image/prepare-runner.sh
+
+      - name: Initialize only open-p4studio
+        run: git submodule update --init --recursive third_party/open-p4studio
+
+      - name: Lint repository files
+        run: ci/lint.sh
+
+      - name: Verify pinned source and license material
+        run: ci/image/verify-source.sh artifacts/source
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: Build local validation image
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: ci/image/Dockerfile
+          platforms: linux/amd64
+          load: true
+          push: false
+          provenance: false
+          tags: ${{ env.LOCAL_IMAGE }}
+          build-args: |
+            UBUNTU_IMAGE=${{ env.UBUNTU_IMAGE }}
+            SDE_VERSION=${{ env.SDE_VERSION }}
+            OPEN_P4STUDIO_COMMIT=${{ env.OPEN_P4STUDIO_COMMIT }}
+            P4C_COMMIT=${{ env.P4C_COMMIT }}
+            IMAGE_PROFILE=${{ env.IMAGE_PROFILE }}
+            VCS_REF=${{ github.sha }}
+            SOURCE_URL=${{ github.server_url }}/${{ github.repository }}
+
+      - name: Verify image contract
+        run: ci/image/verify-image.sh "$LOCAL_IMAGE"
+
+      - name: Run both model self-tests
+        run: |
+          mkdir -p artifacts/selftest
+          docker run --rm --privileged \
+            --volume "$PWD/artifacts/selftest:/artifacts" \
+            "$LOCAL_IMAGE" \
+            open-p4studio-selftest
+
+      - name: Upload validation evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: validation-${{ github.run_id }}
+          path: artifacts/
+          if-no-files-found: warn
+          retention-days: 14
+
+  publish:
+    name: publish
+    if: ${{ startsWith(github.ref, 'refs/tags/sde-9.13.4-tofino1-r') }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 180
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      digest: ${{ steps.push.outputs.digest }}
+      release_tag: ${{ steps.release.outputs.tag }}
+    steps:
+      - name: Check out container repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          submodules: false
+
+      - name: Validate immutable release tag
+        id: release
+        shell: bash
+        run: |
+          if [[ ! "$GITHUB_REF_NAME" =~ ^sde-9\.13\.4-tofino1-r[1-9][0-9]*$ ]]; then
+            echo "Invalid release tag: $GITHUB_REF_NAME" >&2
+            exit 1
+          fi
+          echo "tag=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Load pinned versions
+        run: grep -Ev '^(#|$)' ci/image/versions.env >> "$GITHUB_ENV"
+
+      - name: Prepare ephemeral runner
+        run: ci/image/prepare-runner.sh
+
+      - name: Initialize only open-p4studio
+        run: git submodule update --init --recursive third_party/open-p4studio
+
+      - name: Lint repository files
+        run: ci/lint.sh
+
+      - name: Verify pinned source and license material
+        run: ci/image/verify-source.sh artifacts/source
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: Build local release candidate
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: ci/image/Dockerfile
+          platforms: linux/amd64
+          load: true
+          push: false
+          provenance: false
+          tags: ${{ env.LOCAL_IMAGE }}
+          build-args: |
+            UBUNTU_IMAGE=${{ env.UBUNTU_IMAGE }}
+            SDE_VERSION=${{ env.SDE_VERSION }}
+            OPEN_P4STUDIO_COMMIT=${{ env.OPEN_P4STUDIO_COMMIT }}
+            P4C_COMMIT=${{ env.P4C_COMMIT }}
+            IMAGE_PROFILE=${{ env.IMAGE_PROFILE }}
+            VCS_REF=${{ github.sha }}
+            SOURCE_URL=${{ github.server_url }}/${{ github.repository }}
+
+      - name: Verify candidate image contract
+        run: ci/image/verify-image.sh "$LOCAL_IMAGE"
+
+      - name: Run candidate model self-tests
+        run: |
+          mkdir -p artifacts/release-selftest
+          docker run --rm --privileged \
+            --volume "$PWD/artifacts/release-selftest:/artifacts" \
+            "$LOCAL_IMAGE" \
+            open-p4studio-selftest
+
+      - name: Generate SPDX SBOM
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
+        with:
+          image: ${{ env.LOCAL_IMAGE }}
+          format: spdx-json
+          output-file: artifacts/open-p4studio-container.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+
+      - name: Log in to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push immutable release image with attestations
+        id: push
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: ci/image/Dockerfile
+          platforms: linux/amd64
+          load: false
+          push: true
+          provenance: mode=max
+          sbom: true
+          tags: ${{ env.IMAGE_NAME }}:${{ github.ref_name }}
+          build-args: |
+            UBUNTU_IMAGE=${{ env.UBUNTU_IMAGE }}
+            SDE_VERSION=${{ env.SDE_VERSION }}
+            OPEN_P4STUDIO_COMMIT=${{ env.OPEN_P4STUDIO_COMMIT }}
+            P4C_COMMIT=${{ env.P4C_COMMIT }}
+            IMAGE_PROFILE=${{ env.IMAGE_PROFILE }}
+            VCS_REF=${{ github.sha }}
+            SOURCE_URL=${{ github.server_url }}/${{ github.repository }}
+
+      - name: Record pushed subject
+        run: |
+          printf '%s@%s\n' "$IMAGE_NAME" '${{ steps.push.outputs.digest }}' \
+            | tee artifacts/image-reference.txt
+          {
+            echo '### Published candidate'
+            echo
+            echo '`'"$IMAGE_NAME@${{ steps.push.outputs.digest }}"'`'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload release build evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-build-${{ github.run_id }}
+          path: artifacts/
+          if-no-files-found: warn
+          retention-days: 14
+
+  verify-release:
+    name: verify published digest
+    needs: publish
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Check out validation scripts
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          submodules: false
+
+      - name: Load pinned versions
+        run: grep -Ev '^(#|$)' ci/image/versions.env >> "$GITHUB_ENV"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull immutable digest
+        env:
+          DIGEST: ${{ needs.publish.outputs.digest }}
+        run: docker pull "$IMAGE_NAME@$DIGEST"
+
+      - name: Verify pulled image contract
+        env:
+          DIGEST: ${{ needs.publish.outputs.digest }}
+        run: ci/image/verify-image.sh "$IMAGE_NAME@$DIGEST"
+
+      - name: Re-run both self-tests from pulled digest
+        env:
+          DIGEST: ${{ needs.publish.outputs.digest }}
+        run: |
+          mkdir -p artifacts/pullback-selftest
+          docker run --rm --privileged \
+            --volume "$PWD/artifacts/pullback-selftest:/artifacts" \
+            "$IMAGE_NAME@$DIGEST" \
+            open-p4studio-selftest
+
+      - name: Upload pull-back evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-pullback-${{ github.run_id }}
+          path: artifacts/
+          if-no-files-found: warn
+          retention-days: 14
+
+  release:
+    name: create release
+    needs:
+      - publish
+      - verify-release
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - name: Check out release tooling
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          submodules: false
+
+      - name: Download release evidence
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: release-*-${{ github.run_id }}
+          path: release-assets/evidence
+
+      - name: Render immutable image lock
+        env:
+          DIGEST: ${{ needs.publish.outputs.digest }}
+          RELEASE_TAG: ${{ needs.publish.outputs.release_tag }}
+        run: |
+          source ci/image/versions.env
+          python3 ci/release/render_manifest.py \
+            --image "$IMAGE_NAME" \
+            --digest "$DIGEST" \
+            --release "$RELEASE_TAG" \
+            --versions ci/image/versions.env \
+            --output release-assets/image-lock.json
+          find release-assets -type f ! -name checksums.sha256 -print0 \
+            | sort -z \
+            | xargs -0 sha256sum > release-assets/checksums.sha256
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+        with:
+          tag_name: ${{ needs.publish.outputs.release_tag }}
+          name: ${{ needs.publish.outputs.release_tag }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          body: |
+            Tofino 1 Open P4 Studio SDE container.
+
+            Immutable image:
+            `${{ env.IMAGE_NAME }}@${{ needs.publish.outputs.digest }}`
+
+            This release passed the built-in minimal-forward and upstream
+            tna_counter tests both before publication and after a fresh
+            digest pull.
+          files: |
+            release-assets/image-lock.json
+            release-assets/checksums.sha256
+            release-assets/evidence/**/*

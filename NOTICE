@@ -1,0 +1,11 @@
+Open P4 Studio Container
+Copyright 2026 Open P4 Studio Container contributors
+
+This project is an independent community project. It is not an official
+Intel, P4.org, or p4lang distribution and is not endorsed by those parties.
+
+The container incorporates software from the p4lang/open-p4studio project.
+That software remains subject to its own LICENSE, LICENSES, copyright, and
+ThirdPartyNotice files. The Apache-2.0 license in this repository applies only
+to the original Docker, CI, documentation, and self-test material maintained
+here; it does not replace licenses supplied by upstream components.

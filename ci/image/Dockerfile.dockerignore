@@ -1,0 +1,12 @@
+**
+!ci/
+!ci/image/
+!ci/image/profile.yaml
+!ci/selftest/
+!ci/selftest/**
+!third_party/
+!third_party/open-p4studio/
+!third_party/open-p4studio/**
+third_party/open-p4studio/.git
+third_party/open-p4studio/**/.git
+third_party/open-p4studio/**/.git/**
