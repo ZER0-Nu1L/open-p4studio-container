@@ -83,7 +83,8 @@ published digest is pulled on a fresh runner and passes both self-tests again.
 Each release includes the digest lock, SPDX SBOM, license inventory, and test
 logs.
 
-The source repository is public. The GHCR package remains private until the
-redistribution status of every included binary, particularly the model, has
-been reviewed. See [docs/licensing.md](docs/licensing.md) and
-[docs/releasing.md](docs/releasing.md).
+The source repository is public, and the published GHCR package is currently
+publicly pullable. That operational state is not a legal determination:
+review the redistribution status of every included binary, particularly the
+model, before mirroring or relying on anonymous pulls. See
+[docs/licensing.md](docs/licensing.md) and [docs/releasing.md](docs/releasing.md).
