@@ -35,6 +35,26 @@ struct header_t {
 
 struct metadata_t {}
 
+// The Tofino architecture prepends intrinsic and port metadata before the
+// Ethernet frame.  Keep the self-test source self-contained instead of
+// depending on the example-program include tree.
+parser TofinoIngressParser(
+        packet_in pkt,
+        out ingress_intrinsic_metadata_t ig_intr_md) {
+    state start {
+        pkt.extract(ig_intr_md);
+        transition select(ig_intr_md.resubmit_flag) {
+            1: reject;
+            0: parse_port_metadata;
+        }
+    }
+
+    state parse_port_metadata {
+        pkt.advance(PORT_METADATA_SIZE);
+        transition accept;
+    }
+}
+
 parser SwitchIngressParser(
         packet_in pkt,
         out header_t hdr,
@@ -124,6 +144,37 @@ control SwitchIngress(
         }
         ig_tm_md.bypass_egress = 1w1;
     }
+}
+
+struct empty_header_t {}
+struct empty_metadata_t {}
+
+parser EmptyEgressParser(
+        packet_in pkt,
+        out empty_header_t hdr,
+        out empty_metadata_t eg_md,
+        out egress_intrinsic_metadata_t eg_intr_md) {
+    state start {
+        transition accept;
+    }
+}
+
+control EmptyEgressDeparser(
+        packet_out pkt,
+        inout empty_header_t hdr,
+        in empty_metadata_t eg_md,
+        in egress_intrinsic_metadata_for_deparser_t eg_dprsr_md) {
+    apply { }
+}
+
+control EmptyEgress(
+        inout empty_header_t hdr,
+        inout empty_metadata_t eg_md,
+        in egress_intrinsic_metadata_t eg_intr_md,
+        in egress_intrinsic_metadata_from_parser_t eg_prsr_md,
+        inout egress_intrinsic_metadata_for_deparser_t eg_dprsr_md,
+        inout egress_intrinsic_metadata_for_output_port_t eg_oport_md) {
+    apply { }
 }
 
 Pipeline(
