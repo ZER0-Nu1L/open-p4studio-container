@@ -49,7 +49,10 @@ WORKDIR /opt/open-p4studio
 COPY third_party/open-p4studio/ /opt/open-p4studio/
 COPY ci/image/profile.yaml /tmp/open-p4studio-profile.yaml
 
-RUN ./p4studio/p4studio profile apply --jobs "$(nproc)" /tmp/open-p4studio-profile.yaml \
+# Invoke the Python CLI directly. The shell wrapper unconditionally probes the
+# host kernel build directory before entering the profile command; that probe
+# is not applicable because this image deliberately disables kernel modules.
+RUN python3 ./p4studio profile apply --jobs "$(nproc)" /tmp/open-p4studio-profile.yaml \
     && test -x "$SDE_INSTALL/bin/bf_switchd" \
     && test -x "$SDE_INSTALL/bin/tofino-model" \
     && test -x "$SDE_INSTALL/bin/p4c" \
