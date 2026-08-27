@@ -300,6 +300,22 @@ jobs:
           pattern: release-*-${{ github.run_id }}
           path: release-assets/evidence
 
+      - name: Normalize release evidence names
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          while IFS= read -r -d '' artifact_dir; do
+            artifact_name=$(basename "$artifact_dir")
+            while IFS= read -r -d '' file; do
+              relative=${file#"$artifact_dir"/}
+              safe_relative=${relative//\//__}
+              destination="release-assets/evidence/${artifact_name}__${safe_relative}"
+              mv -- "$file" "$destination"
+            done < <(find "$artifact_dir" -type f -print0)
+            find "$artifact_dir" -depth -type d -empty -delete
+          done < <(find release-assets/evidence -mindepth 1 -maxdepth 1 -type d -print0)
+
       - name: Render immutable image lock
         env:
           DIGEST: ${{ needs.publish.outputs.digest }}
