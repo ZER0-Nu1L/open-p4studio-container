@@ -7,9 +7,9 @@ running them against the Tofino 1 software model from
 [`p4lang/open-p4studio`](https://github.com/p4lang/open-p4studio).
 
 This is an independent community project. It is not an official Intel,
-P4.org, or p4lang image. It does not contain hardware BSPs, Serdes drivers,
-firmware, P4Insight, or private Intel RDC material and does not enable use on
-physical Tofino hardware.
+P4.org, or p4lang image. It does not contain hardware BSPs, private SerDes or
+firmware material, P4Insight, or other private Intel RDC content and does not
+enable use on physical Tofino hardware.
 
 ## Pinned toolchain
 
@@ -35,9 +35,10 @@ SDE_INSTALL: /opt/open-p4studio/install
 Self-test:   /usr/local/bin/open-p4studio-selftest
 ```
 
-Published releases provide an `image-lock.json` containing the complete
-`image@sha256:...` reference. Consumers should use that digest and treat tags
-as discovery metadata only.
+Published releases provide a versioned `image-lock.json` containing the
+complete `image@sha256:...` reference, source repository, and exact container
+commit. Consumers should verify the Release checksum, require
+`schema_version: 1`, use the digest, and treat tags as discovery metadata only.
 
 ## Build locally
 
@@ -78,12 +79,19 @@ docker run --rm --privileged \
 
 ## Releases and licensing
 
-Release tags use `sde-9.13.4-tofino1-rN`. A release is created only after the
-published digest is pulled on a fresh runner and passes both self-tests again.
-Each release includes the digest lock, SPDX SBOM, license inventory, and test
-logs.
+Release tags use `sde-9.13.4-tofino1-rN`. They must be annotated, point to the
+current validated `main`, and contain the exact publication-review marker
+documented in [docs/releasing.md](docs/releasing.md). A release is created only
+after the published digest is pulled anonymously on a fresh runner and passes
+both self-tests again. Each release includes the digest lock, SPDX SBOM,
+license inventory, and test logs. A monthly scheduled run rebuilds and tests
+the pinned source without publishing an image.
 
-The source repository is public. The GHCR package remains private until the
-redistribution status of every included binary, particularly the model, has
-been reviewed. See [docs/licensing.md](docs/licensing.md) and
+The source repository is public, and the published GHCR package is
+intentionally publicly pullable as an operational policy. That policy and the
+publication-review marker are not legal determinations: review the
+redistribution status of every included binary, particularly the model,
+before publishing or mirroring. The image is Model-only and must not acquire
+hardware BSPs, SerDes enablement, firmware copied from a private release, or
+other Intel RDC material. See [docs/licensing.md](docs/licensing.md) and
 [docs/releasing.md](docs/releasing.md).

@@ -8,10 +8,11 @@ import argparse
 import json
 import re
 from pathlib import Path
+from urllib.parse import urlparse
 
 
 DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
-RELEASE_RE = re.compile(r"^sde-9\.13\.4-tofino1-r[1-9][0-9]*$")
+COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 
 
 def parse_args():
@@ -19,6 +20,8 @@ def parse_args():
     parser.add_argument("--image", required=True)
     parser.add_argument("--digest", required=True)
     parser.add_argument("--release", required=True)
+    parser.add_argument("--source-repository", required=True)
+    parser.add_argument("--container-commit", required=True)
     parser.add_argument("--versions", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     return parser.parse_args()
@@ -51,13 +54,29 @@ def main():
     args = parse_args()
     if not DIGEST_RE.fullmatch(args.digest):
         raise SystemExit("invalid OCI digest")
-    if not RELEASE_RE.fullmatch(args.release):
-        raise SystemExit("invalid release tag")
+    if not COMMIT_RE.fullmatch(args.container_commit):
+        raise SystemExit("invalid container commit")
+
+    source_url = urlparse(args.source_repository)
+    if source_url.scheme != "https" or not source_url.netloc or source_url.query:
+        raise SystemExit("invalid source repository URL")
 
     versions = load_versions(args.versions)
+    target = versions["IMAGE_PROFILE"].split("-", 1)[0]
+    release_pattern = re.compile(
+        r"^{}-r[1-9][0-9]*$".format(
+            re.escape("sde-{}-{}".format(versions["SDE_VERSION"], target))
+        )
+    )
+    if not release_pattern.fullmatch(args.release):
+        raise SystemExit("release tag does not match pinned versions")
+
     manifest = {
+        "schema_version": 1,
         "image": "{}@{}".format(args.image, args.digest),
         "release": args.release,
+        "source_repository": args.source_repository,
+        "container_commit": args.container_commit,
         "platform": versions["IMAGE_PLATFORM"],
         "profile": versions["IMAGE_PROFILE"],
         "sde_version": versions["SDE_VERSION"],
